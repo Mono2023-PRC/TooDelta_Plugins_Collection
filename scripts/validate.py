@@ -173,11 +173,23 @@ def validate_metadata():
         if len(path_parts) >= 2:
             owner, repo_name = path_parts[0], path_parts[1]
             
+            # 判断仓库类型：官方插件仓库 vs 独立插件仓库
+            is_official_repo = owner == "ToolDelta-Basic" or repo_name == "PluginMarket"
+            
+            # 获取插件名称（用于在子目录中查找）
+            plugin_name = value.get("name", "")
+            
             # 先尝试 metadata.yaml，再尝试 datas.json
             found = False
             for branch in ["main", "master"]:
                 for filename in ["metadata.yaml", "datas.json"]:
-                    raw_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{branch}/{filename}"
+                    # 根据仓库类型构建不同的路径
+                    if is_official_repo and plugin_name:
+                        # 官方仓库：插件在子目录中
+                        raw_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{branch}/{plugin_name}/{filename}"
+                    else:
+                        # 独立仓库：插件在根目录
+                        raw_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{branch}/{filename}"
                     try:
                         resp = requests.get(raw_url, timeout=10)
                         if resp.status_code == 200:

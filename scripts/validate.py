@@ -67,8 +67,21 @@ def validate_schema():
 
         # repo URL 格式（可选字段）
         repo = value.get("repo", "")
-        if repo and not repo.startswith("https://github.com/"):
-            errors.append(f"[{key}] Repo must be GitHub URL: {repo}")
+        if repo:
+            if not repo.startswith("https://github.com/"):
+                errors.append(f"[{key}] Repo must be GitHub URL: {repo}")
+            else:
+                # 检查仓库名是否以 tooldelta_plugin_ 开头
+                # 白名单：官方插件仓库可以跳过此检查
+                repo_path = repo[len("https://github.com/"):].strip("/")
+                repo_name = repo_path.split("/")[-1] if "/" in repo_path else repo_path
+                owner = repo_path.split("/")[0] if "/" in repo_path else ""
+                
+                # 官方插件仓库白名单
+                is_official_repo = owner == "ToolDelta-Basic" or repo_name == "PluginMarket"
+                
+                if not is_official_repo and not repo_name.startswith("tooldelta_plugin_"):
+                    errors.append(f"[{key}] Repo name must start with 'tooldelta_plugin_': {repo_name}")
 
         # 检查 TooDelta 兼容字段
         if "plugin-id" in value:
@@ -160,24 +173,11 @@ def validate_metadata():
         if len(path_parts) >= 2:
             owner, repo_name = path_parts[0], path_parts[1]
             
-            # 判断仓库类型：官方插件仓库 vs 独立插件仓库
-            is_official_repo = owner == "ToolDelta-Basic" or repo_name == "PluginMarket"
-            
-            # 获取插件名称（用于在子目录中查找）
-            plugin_name = value.get("name", "")
-            
             # 先尝试 metadata.yaml，再尝试 datas.json
             found = False
             for branch in ["main", "master"]:
                 for filename in ["metadata.yaml", "datas.json"]:
-                    # 根据仓库类型构建不同的路径
-                    if is_official_repo and plugin_name:
-                        # 官方仓库：插件在子目录中
-                        raw_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{branch}/{plugin_name}/{filename}"
-                    else:
-                        # 独立仓库：插件在根目录
-                        raw_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{branch}/{filename}"
-                    
+                    raw_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{branch}/{filename}"
                     try:
                         resp = requests.get(raw_url, timeout=10)
                         if resp.status_code == 200:

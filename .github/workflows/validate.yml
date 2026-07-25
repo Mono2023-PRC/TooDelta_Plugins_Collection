@@ -4,9 +4,13 @@ on:
   push:
     paths:
       - 'marketplace.json'
+      - 'scripts/validate.py'
+      - '.github/workflows/validate.yml'
   pull_request:
     paths:
       - 'marketplace.json'
+      - 'scripts/validate.py'
+      - '.github/workflows/validate.yml'
 
 jobs:
   validate:

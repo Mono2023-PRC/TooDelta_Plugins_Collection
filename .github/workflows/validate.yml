@@ -1,0 +1,40 @@
+name: Marketplace Validation
+
+on:
+  push:
+    paths:
+      - 'marketplace.json'
+  pull_request:
+    paths:
+      - 'marketplace.json'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pyyaml requests
+
+      - name: Validate marketplace.json schema
+        run: |
+          python scripts/validate.py schema
+
+      - name: Check plugin repo accessibility
+        run: |
+          python scripts/validate.py repos
+
+      - name: Check plugin sizes
+        run: |
+          python scripts/validate.py sizes
+
+      - name: Validate remote metadata.yaml
+        run: |
+          python scripts/validate.py metadata

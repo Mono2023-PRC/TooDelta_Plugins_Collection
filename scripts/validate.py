@@ -19,6 +19,13 @@ from urllib.parse import urlparse
 MARKETPLACE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "marketplace.json")
 MAX_SIZE_MB = 16
 REQUIRED_FIELDS = ["name", "author", "version", "desc"]
+VERBOSE = os.environ.get("VERBOSE", "").lower() in ("1", "true", "yes")
+
+
+def debug(msg: str):
+    """输出调试日志"""
+    if VERBOSE:
+        print(f"  🐛 {msg}")
 
 
 def load_marketplace():
@@ -30,46 +37,69 @@ def load_marketplace():
 def validate_schema():
     """验证 marketplace.json 格式"""
     errors = []
+    debug(f"Loading marketplace.json from: {MARKETPLACE_FILE}")
+    
     try:
         data = load_marketplace()
     except json.JSONDecodeError as e:
         return [f"Invalid JSON: {e}"]
+    
+    total_plugins = sum(1 for k in data.keys() if not k.startswith("$"))
+    debug(f"Loaded marketplace.json: {total_plugins} plugins found")
 
     # 检查 $meta
     meta = data.get("$meta")
     if not meta:
         errors.append("Missing $meta section")
+        debug("❌ Missing $meta section")
     else:
+        debug(f"$meta: schema_version={meta.get('schema_version')}, name={meta.get('name')}")
         if "schema_version" not in meta:
             errors.append("Missing $meta.schema_version")
+            debug("❌ Missing $meta.schema_version")
         if "name" not in meta:
             errors.append("Missing $meta.name")
+            debug("❌ Missing $meta.name")
 
     # 检查每个插件记录
+    validated = 0
     for key, value in data.items():
         if key.startswith("$"):
             continue
+        
+        validated += 1
+        debug(f"Validating schema for: {key}")
 
         # plugin_id 格式检查
         if "/" not in key:
             errors.append(f"Invalid plugin_id '{key}': must be 'author/name' format")
+            debug(f"  ❌ Invalid plugin_id format")
             continue
 
         # 必填字段
+        missing_fields = []
         for field in REQUIRED_FIELDS:
             if field not in value:
+                missing_fields.append(field)
                 errors.append(f"[{key}] Missing required field: {field}")
+        if missing_fields:
+            debug(f"  ❌ Missing fields: {', '.join(missing_fields)}")
+        else:
+            debug(f"  ✅ All required fields present")
 
         # plugin_id 一致性
         expected_id = f"{value.get('author', '')}/{value.get('name', '')}"
         if expected_id != key:
             errors.append(f"[{key}] ID mismatch: expected {expected_id}")
+            debug(f"  ❌ ID mismatch: key={key}, expected={expected_id}")
 
         # repo URL 格式（可选字段）
         repo = value.get("repo", "")
         if repo:
+            debug(f"  📦 Repo: {repo}")
             if not repo.startswith("https://github.com/"):
                 errors.append(f"[{key}] Repo must be GitHub URL: {repo}")
+                debug(f"  ❌ Not a GitHub URL")
             else:
                 # 检查仓库名是否以 tooldelta_plugin_ 开头
                 # 白名单：官方插件仓库可以跳过此检查
@@ -79,21 +109,32 @@ def validate_schema():
                 
                 # 官方插件仓库白名单
                 is_official_repo = owner == "ToolDelta-Basic" or repo_name == "PluginMarket"
+                debug(f"  👤 Owner: {owner}, Repo: {repo_name}, Official: {is_official_repo}")
                 
                 if not is_official_repo and not repo_name.startswith("tooldelta_plugin_"):
                     errors.append(f"[{key}] Repo name must start with 'tooldelta_plugin_': {repo_name}")
+                    debug(f"  ❌ Repo name doesn't start with 'tooldelta_plugin_'")
+                else:
+                    debug(f"  ✅ Repo name valid")
+        else:
+            debug(f"  ⚠️  No repo field (skip repo validation)")
 
         # 检查 TooDelta 兼容字段
         if "plugin-id" in value:
             plugin_id = value.get("plugin-id")
+            debug(f"  🔑 plugin-id: {plugin_id}")
             if not plugin_id:
                 errors.append(f"[{key}] plugin-id cannot be empty")
+                debug(f"  ❌ plugin-id is empty")
 
         if "plugin-type" in value:
             plugin_type = value.get("plugin-type")
+            debug(f"  📋 plugin-type: {plugin_type}")
             if plugin_type not in ("classic",):
                 errors.append(f"[{key}] Invalid plugin-type: {plugin_type}")
+                debug(f"  ❌ Invalid plugin-type")
 
+    debug(f"Schema validation complete: {validated} plugins validated, {len(errors)} errors")
     return errors
 
 
@@ -101,21 +142,33 @@ def validate_repos():
     """检查插件仓库可访问性"""
     errors = []
     data = load_marketplace()
+    
+    checked = 0
+    skipped = 0
 
     for key, value in data.items():
         if key.startswith("$"):
             continue
         repo = value.get("repo", "")
         if not repo:
-            # TooDelta 插件可能没有 repo 字段，跳过检查
+            skipped += 1
+            debug(f"[{key}] ⚠️  No repo field, skipping")
             continue
+        
+        checked += 1
+        debug(f"[{key}] Checking repo: {repo}")
         try:
             resp = requests.head(repo, timeout=10, allow_redirects=True)
             if resp.status_code >= 400:
                 errors.append(f"[{key}] Repo not accessible: {repo} (HTTP {resp.status_code})")
+                debug(f"  ❌ HTTP {resp.status_code}")
+            else:
+                debug(f"  ✅ HTTP {resp.status_code}")
         except Exception as e:
             errors.append(f"[{key}] Failed to reach repo: {repo} ({e})")
+            debug(f"  ❌ Error: {e}")
 
+    debug(f"Repo validation complete: {checked} checked, {skipped} skipped, {len(errors)} errors")
     return errors
 
 
@@ -123,34 +176,51 @@ def validate_sizes():
     """检查插件大小"""
     errors = []
     data = load_marketplace()
+    
+    checked = 0
+    skipped = 0
 
     for key, value in data.items():
         if key.startswith("$"):
             continue
         repo = value.get("repo", "")
         if not repo:
-            # TooDelta 插件可能没有 repo 字段，跳过检查
+            skipped += 1
+            debug(f"[{key}] ⚠️  No repo field, skipping size check")
             continue
 
+        checked += 1
+        debug(f"[{key}] Checking plugin size...")
+        
         # 下载 ZIP 检查大小
-        zip_url = repo.rstrip("/") + "/archive/refs/heads/main.zip"
-        try:
-            resp = requests.head(zip_url, timeout=10, allow_redirects=True)
-            if resp.status_code == 200:
-                size_mb = int(resp.headers.get('Content-Length', 0)) / (1024 * 1024)
-                if size_mb > MAX_SIZE_MB:
-                    errors.append(f"[{key}] Plugin size {size_mb:.1f}MB exceeds {MAX_SIZE_MB}MB limit")
-            else:
-                # 尝试 master 分支
-                zip_url = repo.rstrip("/") + "/archive/refs/heads/master.zip"
+        zip_url_main = repo.rstrip("/") + "/archive/refs/heads/main.zip"
+        zip_url_master = repo.rstrip("/") + "/archive/refs/heads/master.zip"
+        
+        size_found = False
+        for branch, zip_url in [("main", zip_url_main), ("master", zip_url_master)]:
+            try:
+                debug(f"  Trying branch {branch}: {zip_url}")
                 resp = requests.head(zip_url, timeout=10, allow_redirects=True)
                 if resp.status_code == 200:
-                    size_mb = int(resp.headers.get('Content-Length', 0)) / (1024 * 1024)
+                    size_bytes = int(resp.headers.get('Content-Length', 0))
+                    size_mb = size_bytes / (1024 * 1024)
+                    debug(f"  ✅ Found on {branch}: {size_mb:.2f}MB")
+                    
                     if size_mb > MAX_SIZE_MB:
                         errors.append(f"[{key}] Plugin size {size_mb:.1f}MB exceeds {MAX_SIZE_MB}MB limit")
-        except Exception as e:
-            errors.append(f"[{key}] Failed to check plugin size: {e}")
+                        debug(f"  ❌ Exceeds limit of {MAX_SIZE_MB}MB")
+                    size_found = True
+                    break
+                else:
+                    debug(f"  ⚠️  HTTP {resp.status_code} on {branch}")
+            except Exception as e:
+                debug(f"  ❌ Error on {branch}: {e}")
+                continue
+        
+        if not size_found:
+            debug(f"  ⚠️  Could not determine size (no branch found)")
 
+    debug(f"Size validation complete: {checked} checked, {skipped} skipped, {len(errors)} errors")
     return errors
 
 
@@ -158,14 +228,23 @@ def validate_metadata():
     """验证远程 metadata.yaml 或 datas.json（TooDelta 兼容）"""
     errors = []
     data = load_marketplace()
+    
+    checked = 0
+    skipped = 0
+    valid = 0
 
     for key, value in data.items():
         if key.startswith("$"):
             continue
         repo = value.get("repo", "")
         if not repo:
-            # TooDelta 插件可能没有 repo 字段，跳过远程检查
+            skipped += 1
+            debug(f"[{key}] ⚠️  No repo field, skipping metadata validation")
             continue
+        
+        checked += 1
+        debug(f"[{key}] Validating remote metadata...")
+        debug(f"  Repo: {repo}")
 
         # 尝试从 raw.githubusercontent.com 获取 metadata.yaml 或 datas.json
         parsed = urlparse(repo)
@@ -178,10 +257,15 @@ def validate_metadata():
             
             # 获取插件目录名（优先使用 dir_name，其次使用 name）
             plugin_dir_name = value.get("dir_name", value.get("name", ""))
+            debug(f"  Owner: {owner}, Repo: {repo_name}")
+            debug(f"  Official repo: {is_official_repo}")
+            debug(f"  Plugin dir: {plugin_dir_name}")
             
             # 先尝试 metadata.yaml，再尝试 datas.json
             found = False
             for branch in ["main", "master"]:
+                if found:
+                    break
                 for filename in ["metadata.yaml", "datas.json"]:
                     # 根据仓库类型构建不同的路径
                     if is_official_repo and plugin_dir_name:
@@ -190,35 +274,54 @@ def validate_metadata():
                     else:
                         # 独立仓库：插件在根目录
                         raw_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{branch}/{filename}"
+                    
+                    debug(f"  Trying {branch}/{filename}: {raw_url}")
                     try:
                         resp = requests.get(raw_url, timeout=10)
                         if resp.status_code == 200:
                             found = True
+                            debug(f"  ✅ Found {filename} on branch {branch}")
                             try:
                                 if filename.endswith(".yaml"):
                                     metadata = yaml.safe_load(resp.text)
+                                    debug(f"  📄 Parsed as YAML")
                                 else:
                                     metadata = json.loads(resp.text)
+                                    debug(f"  📄 Parsed as JSON")
                                     # datas.json 格式转换
                                     if 'description' in metadata:
                                         metadata['desc'] = metadata['description']
                                     if 'plugin-id' in metadata:
                                         metadata['name'] = metadata.get('plugin-id')
                                 
+                                # 检查必填字段
+                                missing = []
                                 for field in REQUIRED_FIELDS:
                                     if field not in metadata:
+                                        missing.append(field)
                                         errors.append(f"[{key}] {filename} missing field: {field}")
+                                
+                                if missing:
+                                    debug(f"  ❌ Missing fields: {', '.join(missing)}")
+                                else:
+                                    debug(f"  ✅ All required fields present")
+                                    valid += 1
+                                    
                             except (yaml.YAMLError, json.JSONDecodeError) as e:
                                 errors.append(f"[{key}] Invalid {filename}: {e}")
+                                debug(f"  ❌ Parse error: {e}")
                             break
-                    except Exception:
+                        else:
+                            debug(f"  ⚠️  HTTP {resp.status_code}")
+                    except Exception as e:
+                        debug(f"  ❌ Request error: {e}")
                         continue
-                if found:
-                    break
             
             if not found:
                 errors.append(f"[{key}] Neither metadata.yaml nor datas.json found in repo")
+                debug(f"  ❌ Neither metadata.yaml nor datas.json found")
 
+    debug(f"Metadata validation complete: {checked} checked, {skipped} skipped, {valid} valid, {len(errors)} errors")
     return errors
 
 

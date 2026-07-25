@@ -1465,5 +1465,19 @@
     "plugin-type": "classic",
     "tags": [],
     "dir_name": "音效播放器"
+  },
+  "Mono/NEMC消息互通": {
+    "author": "Mono",
+    "name": "NEMC消息互通",
+    "version": "0.0.1",
+    "repo": "https://github.com/Mono2023-PRC/tooldelta_plugin_NEMC-sync",
+    "desc": "QQ官方bot | 双向互通 网易Minecraft 和 QQ 群消息",
+    "plugin-id": "nemc-message-sync-client",
+    "plugin-type": "classic",
+    "tags": [
+      "QQ",
+      "互通",
+      "NEMC"
+    ]
   }
 }

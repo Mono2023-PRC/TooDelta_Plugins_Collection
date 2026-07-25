@@ -10,12 +10,13 @@ Usage:
 """
 
 import sys
+import os
 import json
 import requests
 import yaml
 from urllib.parse import urlparse
 
-MARKETPLACE_FILE = "../marketplace.json"
+MARKETPLACE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "marketplace.json")
 MAX_SIZE_MB = 16
 REQUIRED_FIELDS = ["name", "author", "version", "repo", "desc"]
 

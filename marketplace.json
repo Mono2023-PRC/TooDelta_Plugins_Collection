@@ -3,5 +3,35 @@
     "schema_version": 1,
     "name": "TooDelta Plugin Marketplace",
     "repository": "https://github.com/Mono2023-PRC/TooDelta_Plugins_Collection"
+  },
+  "机入/ai聊天": {
+    "author": "机入",
+    "name": "ai聊天",
+    "version": "0.0.3",
+    "repo": "https://github.com/ToolDelta-Basic/PluginMarket",
+    "desc": "接入deepseek大模型进行租赁服聊天",
+    "plugin-id": "ai聊天",
+    "plugin-type": "classic",
+    "tags": ["ai", "聊天"]
+  },
+  "SuperScript/前置_MIDI播放器": {
+    "author": "SuperScript",
+    "name": "前置_MIDI播放器",
+    "version": "0.2.8",
+    "repo": "https://github.com/ToolDelta-Basic/PluginMarket",
+    "desc": "所有使用解析和播放midi音乐功能的插件的前置组件",
+    "plugin-id": "MC-MIDIPlayer",
+    "plugin-type": "classic",
+    "tags": ["前置", "音乐"]
+  },
+  "Yeah/Lumelta": {
+    "author": "Yeah",
+    "name": "Lumelta",
+    "version": "1.1.1",
+    "repo": "https://github.com/ToolDelta-Basic/PluginMarket",
+    "desc": "Lumega on ToolDelta by Yeah",
+    "plugin-id": "Lumelta",
+    "plugin-type": "classic",
+    "tags": ["框架", "核心"]
   }
 }

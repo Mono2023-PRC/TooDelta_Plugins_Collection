@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 
 MARKETPLACE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "marketplace.json")
 MAX_SIZE_MB = 16
-REQUIRED_FIELDS = ["name", "author", "version", "repo", "desc"]
+REQUIRED_FIELDS = ["name", "author", "version", "desc"]
 
 
 def load_marketplace():
@@ -65,10 +65,21 @@ def validate_schema():
         if expected_id != key:
             errors.append(f"[{key}] ID mismatch: expected {expected_id}")
 
-        # repo URL 格式
+        # repo URL 格式（可选字段）
         repo = value.get("repo", "")
-        if not repo.startswith("https://github.com/"):
+        if repo and not repo.startswith("https://github.com/"):
             errors.append(f"[{key}] Repo must be GitHub URL: {repo}")
+
+        # 检查 TooDelta 兼容字段
+        if "plugin-id" in value:
+            plugin_id = value.get("plugin-id")
+            if not plugin_id:
+                errors.append(f"[{key}] plugin-id cannot be empty")
+
+        if "plugin-type" in value:
+            plugin_type = value.get("plugin-type")
+            if plugin_type not in ("classic",):
+                errors.append(f"[{key}] Invalid plugin-type: {plugin_type}")
 
     return errors
 
@@ -82,6 +93,9 @@ def validate_repos():
         if key.startswith("$"):
             continue
         repo = value.get("repo", "")
+        if not repo:
+            # TooDelta 插件可能没有 repo 字段，跳过检查
+            continue
         try:
             resp = requests.head(repo, timeout=10, allow_redirects=True)
             if resp.status_code >= 400:
@@ -101,6 +115,9 @@ def validate_sizes():
         if key.startswith("$"):
             continue
         repo = value.get("repo", "")
+        if not repo:
+            # TooDelta 插件可能没有 repo 字段，跳过检查
+            continue
 
         # 下载 ZIP 检查大小
         zip_url = repo.rstrip("/") + "/archive/refs/heads/main.zip"
@@ -125,7 +142,7 @@ def validate_sizes():
 
 
 def validate_metadata():
-    """验证远程 metadata.yaml"""
+    """验证远程 metadata.yaml 或 datas.json（TooDelta 兼容）"""
     errors = []
     data = load_marketplace()
 
@@ -133,32 +150,62 @@ def validate_metadata():
         if key.startswith("$"):
             continue
         repo = value.get("repo", "")
+        if not repo:
+            # TooDelta 插件可能没有 repo 字段，跳过远程检查
+            continue
 
-        # 尝试从 raw.githubusercontent.com 获取 metadata.yaml
+        # 尝试从 raw.githubusercontent.com 获取 metadata.yaml 或 datas.json
         parsed = urlparse(repo)
         path_parts = parsed.path.strip("/").split("/")
         if len(path_parts) >= 2:
             owner, repo_name = path_parts[0], path_parts[1]
-            raw_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/main/metadata.yaml"
-
-            try:
-                resp = requests.get(raw_url, timeout=10)
-                if resp.status_code != 200:
-                    raw_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/master/metadata.yaml"
-                    resp = requests.get(raw_url, timeout=10)
-
-                if resp.status_code == 200:
+            
+            # 判断仓库类型：官方插件仓库 vs 独立插件仓库
+            is_official_repo = owner == "ToolDelta-Basic" or repo_name == "PluginMarket"
+            
+            # 获取插件名称（用于在子目录中查找）
+            plugin_name = value.get("name", "")
+            
+            # 先尝试 metadata.yaml，再尝试 datas.json
+            found = False
+            for branch in ["main", "master"]:
+                for filename in ["metadata.yaml", "datas.json"]:
+                    # 根据仓库类型构建不同的路径
+                    if is_official_repo and plugin_name:
+                        # 官方仓库：插件在子目录中
+                        raw_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{branch}/{plugin_name}/{filename}"
+                    else:
+                        # 独立仓库：插件在根目录
+                        raw_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{branch}/{filename}"
+                    
                     try:
-                        metadata = yaml.safe_load(resp.text)
-                        for field in REQUIRED_FIELDS:
-                            if field not in metadata:
-                                errors.append(f"[{key}] metadata.yaml missing field: {field}")
-                    except yaml.YAMLError as e:
-                        errors.append(f"[{key}] Invalid metadata.yaml: {e}")
-                else:
-                    errors.append(f"[{key}] metadata.yaml not found in repo")
-            except Exception as e:
-                errors.append(f"[{key}] Failed to fetch metadata.yaml: {e}")
+                        resp = requests.get(raw_url, timeout=10)
+                        if resp.status_code == 200:
+                            found = True
+                            try:
+                                if filename.endswith(".yaml"):
+                                    metadata = yaml.safe_load(resp.text)
+                                else:
+                                    metadata = json.loads(resp.text)
+                                    # datas.json 格式转换
+                                    if 'description' in metadata:
+                                        metadata['desc'] = metadata['description']
+                                    if 'plugin-id' in metadata:
+                                        metadata['name'] = metadata.get('plugin-id')
+                                
+                                for field in REQUIRED_FIELDS:
+                                    if field not in metadata:
+                                        errors.append(f"[{key}] {filename} missing field: {field}")
+                            except (yaml.YAMLError, json.JSONDecodeError) as e:
+                                errors.append(f"[{key}] Invalid {filename}: {e}")
+                            break
+                    except Exception:
+                        continue
+                if found:
+                    break
+            
+            if not found:
+                errors.append(f"[{key}] Neither metadata.yaml nor datas.json found in repo")
 
     return errors
 

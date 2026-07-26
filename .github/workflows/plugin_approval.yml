@@ -48,8 +48,8 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add marketplace.json
-          git commit -m "feat: approve plugin \
-            - Plugin: ${{ fromJSON(steps.approve.outputs.plugin_key || '{}') || 'unknown' }}" \
+          PLUGIN_KEY=$(cat "$GITHUB_WORKSPACE/plugin_key.txt" 2>/dev/null || echo "unknown")
+          git commit -m "feat: approve plugin - $PLUGIN_KEY" \
             -m "Auto-approved by ${{ github.event.comment.user.login }} via /approve command" \
             -m "Closes #${{ steps.extract_issue.outputs.issue_number }}"
           git push

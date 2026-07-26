@@ -285,9 +285,11 @@ def main():
         print()
         print("✅ Plugin approved successfully!")
         
-        # 输出供 Actions 使用的变量
-        print(f"::set-output name=plugin_key::{plugin_key}")
-        print(f"::set-output name=is_new::{str(is_new).lower()}")
+        # 输出供 Actions 使用的变量（写入文件替代 set-output）
+        with open("plugin_key.txt", "w", encoding="utf-8") as f:
+            f.write(plugin_key)
+        with open("is_new.txt", "w", encoding="utf-8") as f:
+            f.write(str(is_new).lower())
         
     except Exception as e:
         print(f"❌ Error: {e}")

@@ -8,7 +8,7 @@ jobs:
   approve:
     if: |
       github.event.issue.pull_request == null &&
-      contains(join(github.event.issue.labels.*.name, ','), 'plugin-submission') &&
+      (contains(join(github.event.issue.labels.*.name, ','), 'plugin-submission') || startsWith(github.event.issue.title, '[Plugin]')) &&
       contains(github.event.comment.body, '/approve')
     runs-on: ubuntu-latest
     

@@ -210,9 +210,15 @@ def main():
         
         print(f"📋 Issue: {issue_title}")
         
-        # 检查是否是插件提交
-        if "plugin-submission" not in [l["name"] for l in issue.get("labels", [])]:
+        # 检查是否是插件提交（通过标签或标题）
+        labels = [l["name"] for l in issue.get("labels", [])]
+        has_plugin_submission_label = "plugin-submission" in labels
+        has_plugin_title = issue_title.startswith("[Plugin]")
+        
+        if not has_plugin_submission_label and not has_plugin_title:
             print("⚠️  Not a plugin submission issue, skipping")
+            print(f"   Labels: {labels}")
+            print(f"   Title: {issue_title}")
             return
         
         # 解析插件信息
